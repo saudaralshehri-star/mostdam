@@ -1,231 +1,123 @@
-import React from 'react';
-import { useOutletContext, Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
-import { Users, Calendar, ShoppingBag, ClipboardList, Award, ArrowLeft } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { format } from 'date-fns';
-import { ar } from 'date-fns/locale';
+## Program
 
-const TYPE_LABELS = { program: 'برنامج', event: 'فعالية', workshop: 'ورشة عمل', course: 'دورة' };
-const CHART_COLORS = ['hsl(152,55%,38%)', 'hsl(38,90%,55%)', 'hsl(200,60%,50%)', 'hsl(280,55%,55%)', 'hsl(340,65%,55%)'];
+### Schema
 
-const STATUS_BADGE = {
-  published: 'bg-primary/10 text-primary',
-  ongoing: 'bg-accent/20 text-accent-foreground',
-  completed: 'bg-muted text-muted-foreground',
-  draft: 'bg-secondary text-secondary-foreground',
-  cancelled: 'bg-destructive/10 text-destructive',
-};
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `title` | string | Yes | عنوان البرنامج |
+| `description` | string |  | وصف تفصيلي |
+| `type` | `program`, `event`, `workshop`, `course` |  | نوع البرنامج |
+| `status` | `draft`, `published`, `ongoing`, `completed`, `cancelled` |  | حالة البرنامج |
+| `start_date` | string |  | تاريخ البداية |
+| `end_date` | string |  | تاريخ النهاية |
+| `location` | string |  | الموقع |
+| `max_participants` | number |  | الحد الأقصى للمشاركين |
+| `current_participants` | number |  | عدد المشاركين الحاليين |
+| `image_url` | string |  | صورة البرنامج |
+| `category` | `education`, `health`, `technology`, `environment`, `community`, `business`, `other` |  | التصنيف |
+| `price` | number |  | السعر (0 = مجاني) |
+| `assigned_employee` | string |  | البريد الإلكتروني للموظف المسؤول |
+| `id` | string |  | Unique record identifier |
+| `created_date` | string |  | Record creation timestamp |
+| `updated_date` | string |  | Record last update timestamp |
+| `created_by` | string |  | Email of the user who created the record |
 
-const STATUS_TEXT = { published: 'منشور', ongoing: 'جاري', completed: 'مكتمل', draft: 'مسودة', cancelled: 'ملغي' };
+### Endpoints
 
-function KpiCard({ title, value, sub, icon: IconComp, iconBg, trend }) {
-  return (
-    <Card className="hover:shadow-lg transition-all duration-300">
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between">
-          <div className="space-y-1">
-            <p className="text-sm text-muted-foreground">{title}</p>
-            <p className="text-3xl font-bold">{value}</p>
-            {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
-            {trend !== undefined && (
-              <p className={`text-xs font-medium ${trend >= 0 ? 'text-primary' : 'text-destructive'}`}>
-                {trend >= 0 ? `+${trend}%` : `${trend}%`} عن الشهر السابق
-              </p>
-            )}
-          </div>
-          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${iconBg || 'bg-primary/10'}`}>
-            <IconComp className="w-6 h-6 text-primary" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+### `GET /entities/Program`
+List Program records
 
-export default function Dashboard() {
-  const { user } = useOutletContext();
-  const isAdmin = user?.role === 'admin';
-  const isStaff = isAdmin || user?.role === 'employee';
+**Parameters:**
+- `q` (query): JSON query filter, e.g. {"status":"active"}
+- `limit` (query): Maximum number of records to return
+- `skip` (query): Number of records to skip (pagination)
+- `sort_by` (query): Field name to sort by. Prefix with '-' for descending order, e.g. -created_date
 
-  const { data: programs = [] } = useQuery({ queryKey: ['programs'], queryFn: () => base44.entities.Program.list('-created_date', 200) });
-  const { data: registrations = [] } = useQuery({ queryKey: ['registrations'], queryFn: () => base44.entities.Registration.list('-created_date', 200) });
-  const { data: orders = [] } = useQuery({ queryKey: ['orders'], queryFn: () => base44.entities.Order.list('-created_date', 100) });
-  const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: () => base44.entities.User.list('-created_date', 200), enabled: isAdmin });
+```javascript
+const records = await base44.entities.Program.list();
+```
 
-  const activePrograms = programs.filter(p => p.status === 'published' || p.status === 'ongoing');
-  const attendedCount = registrations.filter(r => r.status === 'attended').length;
-  const attendanceRate = registrations.length > 0 ? Math.round(attendedCount / registrations.length * 100) : 0;
-  const totalRevenue = orders.filter(o => o.status !== 'cancelled').reduce((sum, o) => sum + (o.total_amount || 0), 0);
-  const pendingOrders = orders.filter(o => o.status === 'pending').length;
+### `POST /entities/Program`
+Create a Program record
 
-  // Chart: programs by type
-  const typeChartData = Object.entries(
-    programs.reduce((acc, p) => { acc[p.type || 'program'] = (acc[p.type || 'program'] || 0) + 1; return acc; }, {})
-  ).map(([name, value]) => ({ name: TYPE_LABELS[name] || name, value }));
+```javascript
+const record = await base44.entities.Program.create({
+  // your data
+});
+```
 
-  // Chart: registrations by status
-  const regStatusData = [
-    { name: 'مسجل', value: registrations.filter(r => r.status === 'registered').length },
-    { name: 'حضر', value: registrations.filter(r => r.status === 'attended').length },
-    { name: 'غائب', value: registrations.filter(r => r.status === 'absent').length },
-    { name: 'ملغي', value: registrations.filter(r => r.status === 'cancelled').length },
-  ].filter(d => d.value > 0);
+### `DELETE /entities/Program`
+Delete multiple Program records
 
-  const recentPrograms = programs.slice(0, 6);
-  const recentRegistrations = registrations.slice(0, 5);
+```javascript
+await base44.entities.Program.deleteMany({
+  // query filter — WARNING: empty {} deletes ALL records
+  title: "Example title"
+});
+```
 
-  return (
-    <div className="space-y-8">
-      {/* Welcome */}
-      <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
-        <div>
-          <h1 className="text-3xl font-bold">مرحباً، {user?.full_name?.split(' ')[0] || 'مستخدم'} 👋</h1>
-          <p className="text-muted-foreground mt-1">
-            {isAdmin ? 'نظرة شاملة على أداء منصة مستدام' : isStaff ? 'لوحة تحكم الموظف' : 'مرحباً بك في منصة مستدام'}
-          </p>
-        </div>
-        {isStaff && (
-          <div className="flex gap-2">
-            <Button asChild variant="outline" size="sm">
-              <Link to="/programs">إدارة البرامج</Link>
-            </Button>
-            {isAdmin && (
-              <Button asChild size="sm">
-                <Link to="/users">إدارة المستخدمين</Link>
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
+### `POST /entities/Program/bulk`
+Bulk create Program records
 
-      {/* KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {isAdmin && <KpiCard title="إجمالي المستخدمين" value={users.length} icon={Users} trend={12} />}
-        <KpiCard title="البرامج النشطة" value={activePrograms.length} sub={`من أصل ${programs.length} برنامج`} icon={Calendar} iconBg="bg-primary/10" />
-        <KpiCard title="التسجيلات" value={registrations.length} sub={`نسبة الحضور ${attendanceRate}%`} icon={ClipboardList} trend={8} />
-        {isStaff && <KpiCard title="إيرادات المتجر" value={`${totalRevenue.toLocaleString()} ر.س`} sub={`${pendingOrders} طلب معلق`} icon={ShoppingBag} iconBg="bg-accent/10" />}
-        {!isStaff && <KpiCard title="برامجي" value={registrations.filter(r => r.user_email === user?.email).length} icon={Award} iconBg="bg-primary/10" />}
+```javascript
+const records = await base44.entities.Program.bulkCreate([
+  { /* record 1 */ },
+  { /* record 2 */ },
+]);
+```
 
-      </div>
+### `PUT /entities/Program/bulk`
+Bulk update Program records
 
-      {/* Charts Row */}
-      {isStaff && (
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-          {/* Programs by type */}
-          <Card className="lg:col-span-2">
-            <CardHeader><CardTitle className="text-base">البرامج حسب النوع</CardTitle></CardHeader>
-            <CardContent>
-              {typeChartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={220}>
-                  <PieChart>
-                    <Pie data={typeChartData} cx="50%" cy="50%" outerRadius={75} dataKey="value" label={({ name, value }) => `${name} (${value})`} labelLine={false}>
-                      {typeChartData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-[220px] flex items-center justify-center text-muted-foreground text-sm">لا توجد بيانات</div>
-              )}
-            </CardContent>
-          </Card>
+```javascript
+// bulk-update is not available via SDK — use the REST API
+```
 
-          {/* Registration status */}
-          <Card className="lg:col-span-3">
-            <CardHeader><CardTitle className="text-base">حالة التسجيلات</CardTitle></CardHeader>
-            <CardContent>
-              {regStatusData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={regStatusData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                    <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} />
-                    <Tooltip />
-                    <Bar dataKey="value" name="العدد" radius={[4, 4, 0, 0]}>
-                      {regStatusData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-[220px] flex items-center justify-center text-muted-foreground text-sm">لا توجد بيانات</div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
+### `PATCH /entities/Program/update-many`
+Update many Program records by query
 
-      {/* Bottom row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Programs */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <CardTitle className="text-base">أحدث البرامج</CardTitle>
-            <Button asChild variant="ghost" size="sm" className="gap-1 text-muted-foreground">
-              <Link to="/programs"><ArrowLeft className="w-3 h-3" />عرض الكل</Link>
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {recentPrograms.length > 0 ? recentPrograms.map(p => (
-              <Link key={p.id} to={`/programs/${p.id}`} className="flex items-center justify-between p-3 rounded-xl bg-secondary/40 hover:bg-secondary transition-colors">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-                    <Calendar className="w-4 h-4 text-primary" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-sm line-clamp-1">{p.title}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {p.start_date ? format(new Date(p.start_date), 'dd MMM yyyy', { locale: ar }) : 'غير محدد'}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <Badge className={STATUS_BADGE[p.status] || ''}>{STATUS_TEXT[p.status] || p.status}</Badge>
-                  <span className="text-xs text-muted-foreground">{p.current_participants || 0}/{p.max_participants || '∞'}</span>
-                </div>
-              </Link>
-            )) : (
-              <p className="text-center py-8 text-muted-foreground text-sm">لا توجد برامج</p>
-            )}
-          </CardContent>
-        </Card>
+```javascript
+// update-many is not available via SDK — use the REST API
+```
 
-        {/* Recent Registrations (staff) or My registrations (client) */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <CardTitle className="text-base">{isStaff ? 'أحدث التسجيلات' : 'تسجيلاتي'}</CardTitle>
-            {isStaff && (
-              <Button asChild variant="ghost" size="sm" className="gap-1 text-muted-foreground">
-                <Link to="/registrations"><ArrowLeft className="w-3 h-3" />عرض الكل</Link>
-              </Button>
-            )}
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {recentRegistrations.length > 0 ? recentRegistrations.map(r => (
-              <div key={r.id} className="flex items-center justify-between p-3 rounded-xl bg-secondary/40">
-                <div>
-                  <p className="font-medium text-sm">{r.user_name || r.user_email}</p>
-                  <p className="text-xs text-muted-foreground">{r.user_email}</p>
-                </div>
-                <Badge className={
-                  r.status === 'attended' ? 'bg-primary/10 text-primary' :
-                  r.status === 'absent' ? 'bg-destructive/10 text-destructive' :
-                  r.status === 'cancelled' ? 'bg-muted text-muted-foreground' :
-                  'bg-accent/20 text-accent-foreground'
-                }>
-                  {r.status === 'registered' ? 'مسجل' : r.status === 'attended' ? 'حضر' : r.status === 'absent' ? 'غائب' : 'ملغي'}
-                </Badge>
-              </div>
-            )) : (
-              <p className="text-center py-8 text-muted-foreground text-sm">لا توجد تسجيلات</p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-}
+### `GET /entities/Program/{Program_id}`
+Get a Program record by ID
+
+**Parameters:**
+- `Program_id` (path): Record ID
+
+```javascript
+const record = await base44.entities.Program.get(recordId);
+```
+
+### `PUT /entities/Program/{Program_id}`
+Update a Program record
+
+**Parameters:**
+- `Program_id` (path): Record ID
+
+```javascript
+const record = await base44.entities.Program.update(recordId, {
+  // fields to update
+});
+```
+
+### `DELETE /entities/Program/{Program_id}`
+Delete a Program record
+
+**Parameters:**
+- `Program_id` (path): Record ID
+
+```javascript
+await base44.entities.Program.delete(recordId);
+```
+
+### `PUT /entities/Program/{Program_id}/restore`
+Restore a deleted Program record
+
+**Parameters:**
+- `Program_id` (path): Record ID
+
+```javascript
+const record = await base44.entities.Program.restore(recordId);
+```
